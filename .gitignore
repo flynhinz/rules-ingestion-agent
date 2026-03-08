@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Output artifacts (keep .gitkeep, ignore generated files)
+output/*
+!output/.gitkeep
+
+# Input PDFs (add explicitly if you want to version them)
+input/*.pdf

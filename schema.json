@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crewrules.app/schemas/rule-ingestion/v1",
+  "title": "CrewRules Ingestion Payload v1",
+  "description": "Canonical schema for bulk rule ingestion into the CrewRules Legality Engine.",
+  "type": "object",
+  "required": ["rules"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "meta": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": { "type": "string", "const": "1.0" },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "generatedBy": { "type": "string" },
+        "vendorSystem": {
+          "type": "string",
+          "enum": ["jeppesen-rave", "cae-sabre", "cae-merlot", "aims", "ibs", "custom", "manual"]
+        },
+        "description": { "type": "string" },
+        "idempotencyKey": { "type": "string" }
+      }
+    },
+    "ruleset": {
+      "type": "object",
+      "required": ["id", "jurisdiction"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "jurisdiction": { "type": "string" },
+        "effectiveDate": { "type": "string", "format": "date" },
+        "expiryDate": { "type": ["string", "null"], "format": "date" }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/Rule" }
+    },
+    "operationalDefaults": {
+      "type": "object",
+      "properties": {
+        "timeEvaluation": {
+          "type": "object",
+          "properties": {
+            "mode": { "type": "string", "enum": ["UTC", "local", "homeBase", "departure", "arrival"], "default": "UTC" },
+            "dayOffAlignment": { "type": "string", "enum": ["UTC", "homeBase", "local"], "default": "homeBase" },
+            "dstDisplay": { "type": "string", "enum": ["UTC", "homeBase", "local"], "default": "homeBase" }
+          }
+        },
+        "proratedLeave": {
+          "type": "object",
+          "properties": {
+            "thresholdHours": { "type": "number", "default": 12 },
+            "countsAs": { "type": "number", "default": 1 }
+          }
+        },
+        "s500Handling": {
+          "type": "object",
+          "properties": {
+            "disableInLiveRoster": { "type": "boolean", "default": true },
+            "allowHistoricalEvaluation": { "type": "boolean", "default": false }
+          }
+        }
+      }
+    },
+    "automationInstructions": {
+      "type": "object",
+      "properties": {
+        "idempotencyKeyTemplate": { "type": "string" },
+        "validationSteps": { "type": "array", "items": { "type": "string" } },
+        "retryPolicy": {
+          "type": "object",
+          "properties": {
+            "maxAttempts": { "type": "integer", "default": 3 },
+            "backoff": { "type": "string", "enum": ["none", "linear", "exponential"], "default": "exponential" }
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "ambiguityLog": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "summary"],
+        "properties": {
+          "id": { "type": "string" },
+          "summary": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "$defs": {
+    "Rule": {
+      "type": "object",
+      "required": ["id", "title", "rawText", "dsl", "provenance"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9._-]+$" },
+        "title": { "type": "string", "maxLength": 200 },
+        "referenceCode": { "type": "string" },
+        "type": { "type": "string" },
+        "rawText": { "type": "string", "minLength": 10 },
+        "dsl": { "$ref": "#/$defs/RuleDSL" },
+        "logicGraph": { "$ref": "#/$defs/LogicGraph" },
+        "scope": { "$ref": "#/$defs/RuleScope" },
+        "params": { "type": "object", "additionalProperties": true },
+        "visibility": {
+          "type": "string",
+          "enum": ["public", "airline-private", "partner-only"],
+          "default": "public"
+        },
+        "provenance": { "$ref": "#/$defs/Provenance" },
+        "quarantineMetadata": { "$ref": "#/$defs/QuarantineMetadata" },
+        "assumedTerms": { "type": "array", "items": { "$ref": "#/$defs/OntologyTerm" } },
+        "testCases": { "type": "array", "items": { "$ref": "#/$defs/TestCase" } },
+        "changeNotes": { "type": "array", "items": { "type": "string" } },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "lifecycleStatus": {
+          "type": "string",
+          "enum": ["draft", "quarantine", "quarantine_inactive", "approved", "published", "deprecated"]
+        },
+        "notes": { "type": "array", "items": { "type": "string" } },
+        "assumptions": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "RuleDSL": {
+      "type": "object",
+      "required": ["ruleType"],
+      "properties": {
+        "ruleType": { "type": "string" },
+        "condition": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["minimum", "maximum", "range", "equals", "not-equals", "one-of", "all-of", "conditional"]
+            },
+            "field": { "type": "string" },
+            "value": { "oneOf": [{ "type": "number" }, { "type": "string" }, { "type": "boolean" }] },
+            "unit": { "type": "string" },
+            "lookupTable": { "type": "string" }
+          }
+        },
+        "exceptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": { "type": "string" },
+              "when": { "type": "object" },
+              "then": { "type": "object" }
+            }
+          }
+        },
+        "rollingWindow": {
+          "type": "object",
+          "properties": {
+            "duration": { "type": "number" },
+            "unit": { "type": "string", "enum": ["hours", "days", "calendar-days", "weeks", "months"] },
+            "alignment": { "type": "string", "enum": ["UTC", "homeBase", "local"] }
+          }
+        },
+        "timeOfDayWindow": {
+          "type": "object",
+          "properties": {
+            "start": { "type": "string", "pattern": "^\\d{2}:\\d{2}$" },
+            "end": { "type": "string", "pattern": "^\\d{2}:\\d{2}$" },
+            "timeZoneContext": { "type": "string" },
+            "appliesTo": { "type": "string" },
+            "inclusive": { "type": "boolean", "default": true }
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "LogicGraph": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "type", "label"],
+            "properties": {
+              "id": { "type": "string" },
+              "type": { "type": "string", "enum": ["start", "decision", "outcome", "process"] },
+              "label": { "type": "string" }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["from", "to"],
+            "properties": {
+              "from": { "type": "string" },
+              "to": { "type": "string" },
+              "label": { "type": "string", "enum": ["YES", "NO", ""] }
+            }
+          }
+        }
+      }
+    },
+    "RuleScope": {
+      "type": "object",
+      "properties": {
+        "jurisdiction": { "type": "string" },
+        "airlineId": { "type": ["string", "null"] },
+        "crewGroup": { "type": ["string", "null"] },
+        "fleet": { "type": ["string", "null"] },
+        "operationType": { "type": ["string", "null"] },
+        "timeZoneContext": { "type": ["string", "null"] }
+      }
+    },
+    "Provenance": {
+      "type": "object",
+      "required": ["sourceFile"],
+      "properties": {
+        "sourceFile": { "type": "string" },
+        "sourceUrl": { "type": "string", "format": "uri" },
+        "extractedBy": { "type": "string" },
+        "extractedAt": { "type": "string", "format": "date-time" },
+        "pageReference": { "type": "string" },
+        "documentVersion": { "type": "string" },
+        "confidence": { "type": "string", "enum": ["low", "medium", "high"] }
+      }
+    },
+    "QuarantineMetadata": {
+      "type": "object",
+      "required": ["stagedAt"],
+      "properties": {
+        "stagedAt": { "type": "string", "format": "date-time" },
+        "reviewerChecklist": { "type": "array", "items": { "type": "string" } },
+        "ambiguities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["field", "issue"],
+            "properties": {
+              "field": { "type": "string" },
+              "issue": { "type": "string" },
+              "suggestion": { "type": "string" }
+            }
+          }
+        },
+        "priority": { "type": "string", "enum": ["low", "medium", "high", "critical"], "default": "medium" },
+        "suggestedDefaultsApplied": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "OntologyTerm": {
+      "type": "object",
+      "required": ["code", "name", "category"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "dataType": {
+          "type": "string",
+          "enum": ["string", "number", "boolean", "duration", "datetime", "date", "time", "enum"],
+          "default": "string"
+        },
+        "unit": { "type": ["string", "null"] },
+        "description": { "type": "string" },
+        "aliases": { "type": "array", "items": { "type": "string" } },
+        "confidence": { "type": "string", "enum": ["low", "medium", "high"] }
+      }
+    },
+    "TestCase": {
+      "type": "object",
+      "required": ["name", "inputData", "expectedOutcome"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "inputData": { "type": "object", "additionalProperties": true },
+        "expectedOutcome": {
+          "type": "object",
+          "properties": {
+            "compliant": { "type": "boolean" },
+            "message": { "type": "string" },
+            "severity": { "type": "string", "enum": ["info", "warning", "violation"] }
+          },
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

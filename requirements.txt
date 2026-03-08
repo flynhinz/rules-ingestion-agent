@@ -1,0 +1,15 @@
+# rules-ingestion-agent dependencies
+# Install with: pip install -r requirements.txt
+
+# PDF extraction
+pdfplumber>=0.10.0
+PyMuPDF>=1.23.0        # fitz — fallback for complex layouts
+
+# JSON schema validation
+jsonschema>=4.21.0
+
+# Testing
+pytest>=8.0.0
+
+# Optional — enable for LLM-based summarisation (set ANTHROPIC_API_KEY env var)
+# anthropic>=0.25.0
