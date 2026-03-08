@@ -24,6 +24,7 @@ class RuleRecord:
     raw_text: str
     page_number: int
     section: str
+    reference_code: str = ""          # human-readable e.g. "52.1(a)"
     metadata: dict[str, Any] = field(default_factory=dict)
     references: list[str] = field(default_factory=list)
     flags: list[str] = field(default_factory=list)
@@ -216,6 +217,7 @@ def extract_rules(section: SectionRecord, raw_text: str, start_page: int = 1) ->
                 continue  # skip non-rule lines
 
             rule_id = _safe_id(f"{section.section_id}.{clause_label}")
+            ref_code = f"{section.section_id}({clause_label})"
             title = _derive_title(clause_text, section.title)
             meta = extract_rule_metadata(clause_text)
             refs = _extract_references(clause_text)
@@ -227,6 +229,7 @@ def extract_rules(section: SectionRecord, raw_text: str, start_page: int = 1) ->
                 raw_text=clause_text,
                 page_number=start_page,
                 section=section.section_id,
+                reference_code=ref_code,
                 metadata=meta,
                 references=refs,
                 flags=flags,
@@ -246,6 +249,7 @@ def extract_rules(section: SectionRecord, raw_text: str, start_page: int = 1) ->
                 raw_text=stripped,
                 page_number=start_page,
                 section=section.section_id,
+                reference_code=section.section_id,
                 metadata=meta,
                 references=_extract_references(stripped),
                 flags=_detect_flags(stripped),

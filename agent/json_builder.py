@@ -196,16 +196,24 @@ def _build_rule(rule: Any, suggestions: list[Any], source_file: str) -> dict:
     meta = rule.metadata
 
     dsl = _build_dsl(rule, meta)
+    params = _build_params(dsl)
     provenance = _build_provenance(rule, source_file, now)
     assumed_terms = _build_assumed_terms(suggestions)
+    test_cases = _build_test_cases(rule, dsl)
 
     rule_obj: dict[str, Any] = {
         "id": _safe_id(rule.rule_id),
+        "referenceCode": rule.reference_code or _safe_id(rule.rule_id),
+        "type": meta.get("rule_type", "duty-limit"),
         "title": rule.title[:200],
         "rawText": rule.raw_text,
         "dsl": dsl,
+        "params": params,
         "provenance": provenance,
     }
+
+    if test_cases:
+        rule_obj["testCases"] = test_cases
 
     if rule.references:
         rule_obj["notes"] = [f"References: {', '.join(rule.references)}"]
@@ -265,7 +273,7 @@ def _field_for_rule_type(rule_type: str) -> str:
 def _build_provenance(rule: Any, source_file: str, now: str) -> dict:
     return {
         "sourceFile": source_file,
-        "extractedBy": "rules-ingestion-agent v0.1.0",
+        "extractedBy": "Regulus v0.1.0",
         "extractedAt": now,
         "pageReference": f"p.{rule.page_number}",
         "confidence": "medium" if not rule.flags else "low",
@@ -318,6 +326,107 @@ def _build_quarantine(rule: Any, now: str) -> dict:
         "ambiguities": ambiguities,
         "priority": "high" if ambiguities else "medium",
     }
+
+
+def _build_params(dsl: dict) -> dict[str, Any]:
+    """Build a structured params dict from DSL condition and rolling window values."""
+    params: dict[str, Any] = {}
+    condition = dsl.get("condition")
+    if condition:
+        value = condition.get("value")
+        unit = condition.get("unit", "hours")
+        cond_type = condition.get("type")
+        field = condition.get("field", "dutyHours")
+        if value is not None and cond_type:
+            prefix = "max" if cond_type == "maximum" else "min"
+            key = f"{prefix}{field[0].upper()}{field[1:]}"
+            params[key] = value
+            params[f"{key}Unit"] = unit
+
+    rolling = dsl.get("rollingWindow")
+    if rolling:
+        params["rollingWindowDuration"] = rolling.get("duration")
+        params["rollingWindowUnit"] = rolling.get("unit")
+        params["rollingWindowAlignment"] = rolling.get("alignment", "homeBase")
+
+    return params
+
+
+def _build_test_cases(rule: Any, dsl: dict) -> list[dict]:
+    """Auto-generate basic compliance test cases from a rule's DSL condition."""
+    condition = dsl.get("condition")
+    if not condition:
+        return []
+
+    cond_type = condition.get("type")
+    field = condition.get("field", "dutyHours")
+    value = condition.get("value")
+    unit = condition.get("unit", "hours")
+
+    if value is None:
+        return []
+
+    field_label = field[0].upper() + field[1:]  # e.g. "DutyHours"
+
+    if cond_type == "maximum":
+        return [
+            {
+                "name": f"Compliant - {field_label} below limit",
+                "description": f"{field_label} is comfortably within the {value} {unit} maximum.",
+                "inputData": {field: round(value - 1, 1)},
+                "expectedOutcome": {
+                    "compliant": True,
+                    "message": f"{field_label} {round(value - 1, 1)} {unit} is within the {value} {unit} limit.",
+                    "severity": "info",
+                },
+            },
+            {
+                "name": f"Boundary - {field_label} exactly at limit",
+                "description": f"{field_label} equals the maximum permitted value.",
+                "inputData": {field: value},
+                "expectedOutcome": {
+                    "compliant": True,
+                    "message": f"{field_label} {value} {unit} is at but does not exceed the {value} {unit} limit.",
+                    "severity": "info",
+                },
+            },
+            {
+                "name": f"Violation - {field_label} exceeds limit",
+                "description": f"{field_label} is one unit above the {value} {unit} maximum.",
+                "inputData": {field: round(value + 1, 1)},
+                "expectedOutcome": {
+                    "compliant": False,
+                    "message": f"{field_label} {round(value + 1, 1)} {unit} exceeds the maximum of {value} {unit}.",
+                    "severity": "violation",
+                },
+            },
+        ]
+
+    if cond_type == "minimum":
+        return [
+            {
+                "name": f"Compliant - {field_label} meets minimum",
+                "description": f"{field_label} meets or exceeds the required {value} {unit}.",
+                "inputData": {field: value},
+                "expectedOutcome": {
+                    "compliant": True,
+                    "message": f"{field_label} {value} {unit} meets the minimum requirement.",
+                    "severity": "info",
+                },
+            },
+            {
+                "name": f"Violation - {field_label} below minimum",
+                "description": f"{field_label} falls short of the required {value} {unit}.",
+                "inputData": {field: round(value - 1, 1)},
+                "expectedOutcome": {
+                    "compliant": False,
+                    "message": f"{field_label} {round(value - 1, 1)} {unit} is below the minimum of {value} {unit}.",
+                    "severity": "violation",
+                },
+            },
+        ]
+
+    return []
 
 
 def _build_ambiguity_log(rules: list[Any]) -> list[dict]:
