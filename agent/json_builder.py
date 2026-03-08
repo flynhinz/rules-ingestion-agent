@@ -52,6 +52,17 @@ def build_output(parsed_doc: Any, all_suggestions: list[list[Any]]) -> dict:
         for rule, suggs in zip(rules, all_suggestions)
     }
 
+    # Assign parsed PDF scenarios to the primary rule (first rule with a limit value,
+    # or just the first rule if none have one).
+    scenarios = getattr(parsed_doc, "scenarios", [])
+    primary_rule_id: str | None = None
+    for rule in rules:
+        if rule.metadata.get("limit_value") is not None:
+            primary_rule_id = rule.rule_id
+            break
+    if primary_rule_id is None and rules:
+        primary_rule_id = rules[0].rule_id
+
     output: dict[str, Any] = {
         "$schema": "https://crewrules.app/schemas/rule-ingestion/v1",
         "meta": {
@@ -63,7 +74,12 @@ def build_output(parsed_doc: Any, all_suggestions: list[list[Any]]) -> dict:
         },
         "ruleset": _build_ruleset(parsed_doc),
         "rules": [
-            _build_rule(rule, suggestions_map.get(rule.rule_id, []), parsed_doc.source_file)
+            _build_rule(
+                rule,
+                suggestions_map.get(rule.rule_id, []),
+                parsed_doc.source_file,
+                scenarios=scenarios if rule.rule_id == primary_rule_id else [],
+            )
             for rule in rules
         ],
         "ambiguityLog": _build_ambiguity_log(rules),
@@ -191,7 +207,7 @@ def _build_ruleset(parsed_doc: Any) -> dict:
     }
 
 
-def _build_rule(rule: Any, suggestions: list[Any], source_file: str) -> dict:
+def _build_rule(rule: Any, suggestions: list[Any], source_file: str, scenarios: list[Any] | None = None) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     meta = rule.metadata
 
@@ -199,7 +215,7 @@ def _build_rule(rule: Any, suggestions: list[Any], source_file: str) -> dict:
     params = _build_params(dsl)
     provenance = _build_provenance(rule, source_file, now)
     assumed_terms = _build_assumed_terms(suggestions)
-    test_cases = _build_test_cases(rule, dsl)
+    test_cases = _build_test_cases_from_scenarios(scenarios) if scenarios else []
 
     rule_obj: dict[str, Any] = {
         "id": _safe_id(rule.rule_id),
@@ -352,81 +368,17 @@ def _build_params(dsl: dict) -> dict[str, Any]:
     return params
 
 
-def _build_test_cases(rule: Any, dsl: dict) -> list[dict]:
-    """Auto-generate basic compliance test cases from a rule's DSL condition."""
-    condition = dsl.get("condition")
-    if not condition:
-        return []
-
-    cond_type = condition.get("type")
-    field = condition.get("field", "dutyHours")
-    value = condition.get("value")
-    unit = condition.get("unit", "hours")
-
-    if value is None:
-        return []
-
-    field_label = field[0].upper() + field[1:]  # e.g. "DutyHours"
-
-    if cond_type == "maximum":
-        return [
-            {
-                "name": f"Compliant - {field_label} below limit",
-                "description": f"{field_label} is comfortably within the {value} {unit} maximum.",
-                "inputData": {field: round(value - 1, 1)},
-                "expectedOutcome": {
-                    "compliant": True,
-                    "message": f"{field_label} {round(value - 1, 1)} {unit} is within the {value} {unit} limit.",
-                    "severity": "info",
-                },
-            },
-            {
-                "name": f"Boundary - {field_label} exactly at limit",
-                "description": f"{field_label} equals the maximum permitted value.",
-                "inputData": {field: value},
-                "expectedOutcome": {
-                    "compliant": True,
-                    "message": f"{field_label} {value} {unit} is at but does not exceed the {value} {unit} limit.",
-                    "severity": "info",
-                },
-            },
-            {
-                "name": f"Violation - {field_label} exceeds limit",
-                "description": f"{field_label} is one unit above the {value} {unit} maximum.",
-                "inputData": {field: round(value + 1, 1)},
-                "expectedOutcome": {
-                    "compliant": False,
-                    "message": f"{field_label} {round(value + 1, 1)} {unit} exceeds the maximum of {value} {unit}.",
-                    "severity": "violation",
-                },
-            },
-        ]
-
-    if cond_type == "minimum":
-        return [
-            {
-                "name": f"Compliant - {field_label} meets minimum",
-                "description": f"{field_label} meets or exceeds the required {value} {unit}.",
-                "inputData": {field: value},
-                "expectedOutcome": {
-                    "compliant": True,
-                    "message": f"{field_label} {value} {unit} meets the minimum requirement.",
-                    "severity": "info",
-                },
-            },
-            {
-                "name": f"Violation - {field_label} below minimum",
-                "description": f"{field_label} falls short of the required {value} {unit}.",
-                "inputData": {field: round(value - 1, 1)},
-                "expectedOutcome": {
-                    "compliant": False,
-                    "message": f"{field_label} {round(value - 1, 1)} {unit} is below the minimum of {value} {unit}.",
-                    "severity": "violation",
-                },
-            },
-        ]
-
-    return []
+def _build_test_cases_from_scenarios(scenarios: list[Any]) -> list[dict]:
+    """Convert parsed ScenarioRecords into schema-compliant TestCase dicts."""
+    return [
+        {
+            "name": s.name,
+            "description": s.description,
+            "inputData": s.input_data,
+            "expectedOutcome": s.expected_outcome,
+        }
+        for s in scenarios
+    ]
 
 
 def _build_ambiguity_log(rules: list[Any]) -> list[dict]:

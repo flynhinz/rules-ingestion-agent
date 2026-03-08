@@ -40,11 +40,21 @@ class SectionRecord:
 
 
 @dataclass
+class ScenarioRecord:
+    """A single test scenario parsed from the document's Scenarios section."""
+    name: str
+    description: str
+    input_data: dict[str, Any]
+    expected_outcome: dict[str, Any]
+
+
+@dataclass
 class ParsedDocument:
     """Top-level result returned by parse_document()."""
     source_file: str
     doc_metadata: dict[str, Any]
     sections: list[SectionRecord] = field(default_factory=list)
+    scenarios: list[ScenarioRecord] = field(default_factory=list)
 
     @property
     def all_rules(self) -> list[RuleRecord]:
@@ -97,6 +107,29 @@ _PRIMARY_LIMIT = re.compile(
 # Cross-references to other rules/sections
 _XREF = re.compile(r'\b(?:clause|section|rule|paragraph|sub-rule)\s+([\d.]+(?:\([a-z\d]+\))*)', re.IGNORECASE)
 
+# Scenario section heading: "7.0 Rule Example (Scenarios)" or "11.0 Rule Examples (Scenarios)"
+_SCENARIO_SECTION_HEADING = re.compile(
+    r'^\d{1,2}\.0\s+Rule\s+Examples?\s*(?:\(Scenarios?\))?\s*$',
+    re.MULTILINE | re.IGNORECASE,
+)
+
+# Numbered scenario: "Scenario 1: Title" — captures everything until next scenario or end
+_NUMBERED_SCENARIO = re.compile(
+    r'Scenario\s+(\d+)[:\s]+([^\n]+)\n(.*?)(?=Scenario\s+\d+|\Z)',
+    re.DOTALL,
+)
+
+# Inline scenario: "Description → outcome" or "Description -> outcome"
+_INLINE_SCENARIO = re.compile(
+    r'^([^\n→\-][^\n]+?)\s*[→\u2192]>?\s*(.+)$',
+    re.MULTILINE,
+)
+
+# Outcome signals
+_OUTCOME_NO_ALERT = re.compile(r'\bno\s+(?:illegal\s+)?alert\b', re.IGNORECASE)
+_OUTCOME_ALERT = re.compile(r'\balert\s+(?:displayed|triggered)\b', re.IGNORECASE)
+_OUTCOME_ILLEGAL = re.compile(r'\billegal\b', re.IGNORECASE)
+
 # Sanitise a string to a valid schema ID
 _ID_UNSAFE = re.compile(r'[^a-zA-Z0-9._-]')
 
@@ -137,7 +170,120 @@ def parse_document(pages: list[dict], source_file: str = "", doc_metadata: dict 
         return doc
 
     doc.sections = sections
+    doc.scenarios = parse_scenarios(pages)
     return doc
+
+
+def parse_scenarios(pages: list[dict]) -> list[ScenarioRecord]:
+    """Extract test scenarios from the document's 'Rule Examples (Scenarios)' section."""
+    full_text = "\n".join(p["raw_text"] for p in pages)
+
+    # Find the scenario section — take the last (richest) occurrence
+    headings = list(_SCENARIO_SECTION_HEADING.finditer(full_text))
+    if not headings:
+        return []
+
+    # Use the last match — sidebar repeats the heading without body, body comes last
+    section_start = headings[-1].end()
+    # Section ends at the next top-level numeric heading or end of text
+    next_section = re.search(r'^\d{1,2}\.0\s+[A-Z]', full_text[section_start:], re.MULTILINE)
+    section_text = full_text[section_start: section_start + next_section.start()] if next_section else full_text[section_start:]
+
+    scenarios: list[ScenarioRecord] = []
+
+    # Try numbered "Scenario N: Title" format first
+    numbered = list(_NUMBERED_SCENARIO.finditer(section_text))
+    if numbered:
+        for m in numbered:
+            name = m.group(2).strip()
+            body = m.group(3).strip()
+            scenarios.append(_parse_scenario_body(name, body))
+        return scenarios
+
+    # Fall back to inline "Description → outcome" format
+    inline = list(_INLINE_SCENARIO.finditer(section_text))
+    for m in inline:
+        description = m.group(1).strip()
+        outcome_text = m.group(2).strip()
+        outcome = _classify_outcome(outcome_text)
+        scenarios.append(ScenarioRecord(
+            name=description,
+            description=description,
+            input_data={"conditions": [description]},
+            expected_outcome=outcome,
+        ))
+
+    return scenarios
+
+
+def _parse_scenario_body(name: str, body: str) -> ScenarioRecord:
+    """Parse a numbered scenario's body lines into inputData and expectedOutcome."""
+    lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
+
+    # Last line that contains an outcome signal is the outcome
+    outcome_line = ""
+    body_lines: list[str] = []
+    for line in lines:
+        if _OUTCOME_NO_ALERT.search(line) or _OUTCOME_ALERT.search(line) or _OUTCOME_ILLEGAL.search(line):
+            outcome_line = line
+        else:
+            body_lines.append(line)
+
+    outcome = _classify_outcome(outcome_line or name)
+
+    # Build inputData: "Key = Value" pairs → dict entries; others → conditions list
+    input_data: dict[str, Any] = {}
+    conditions: list[str] = []
+    for line in body_lines:
+        if "=" in line:
+            key, _, val = line.partition("=")
+            # camelCase the key: "Rolling total" → "rollingTotal"
+            words = key.strip().split()
+            camel = words[0].lower() + "".join(w.capitalize() for w in words[1:])
+            input_data[camel] = val.strip()
+        else:
+            conditions.append(line)
+    if conditions:
+        input_data["conditions"] = conditions
+
+    return ScenarioRecord(
+        name=name,
+        description=name,
+        input_data=input_data,
+        expected_outcome=outcome,
+    )
+
+
+def _classify_outcome(text: str) -> dict[str, Any]:
+    """Map outcome text to a structured expectedOutcome dict."""
+    t = text.lower()
+    # "no illegal alert" — compliant but with conditions applied (allowances etc.)
+    if "no illegal alert" in t:
+        return {
+            "compliant": True,
+            "message": text,
+            "severity": "warning",
+        }
+    # "no alert" — fully compliant
+    if _OUTCOME_NO_ALERT.search(text):
+        return {
+            "compliant": True,
+            "message": text,
+            "severity": "info",
+        }
+    # "alert displayed / triggered" — violation
+    if _OUTCOME_ALERT.search(text) or "illegal" in t:
+        return {
+            "compliant": False,
+            "message": text,
+            "severity": "violation",
+        }
+    # Ambiguous — treat as warning for human review
+    return {
+        "compliant": True,
+        "message": text,
+        "severity": "warning",
+    }
 
 
 def detect_sections(pages: list[dict]) -> list[SectionRecord]:
