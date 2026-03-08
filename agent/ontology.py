@@ -148,6 +148,169 @@ _BUILTIN_TERMS: list[dict] = [
         "description": "A duty period significantly altered from the planned schedule.",
         "aliases": ["disrupted duty", "disrupted", "irregular operations", "irops"],
     },
+
+    # ── Crew positions / groups ──────────────────────────────────────────────
+    {
+        "code": "CREW_FLIGHT_ATTENDANT",
+        "name": "Flight Attendant",
+        "category": "crew-group",
+        "dataType": "string",
+        "unit": None,
+        "description": "A cabin crew member responsible for passenger safety and service.",
+        "aliases": [
+            "flight attendant", "flight attendants", "cabin attendant",
+            "cabin attendants", "fa",
+        ],
+    },
+    {
+        "code": "CREW_CABIN",
+        "name": "Cabin Crew",
+        "category": "crew-group",
+        "dataType": "string",
+        "unit": None,
+        "description": "All crew members assigned to the cabin, including flight attendants.",
+        "aliases": [
+            "cabin crew", "all cabin crew", "cabin staff", "cabin personnel",
+        ],
+    },
+    {
+        "code": "CREW_FLIGHT_DECK",
+        "name": "Flight Deck Crew",
+        "category": "crew-group",
+        "dataType": "string",
+        "unit": None,
+        "description": "Pilots and other crew members who operate the aircraft.",
+        "aliases": [
+            "flight deck", "flight deck crew", "pilots", "flight crew",
+            "cockpit crew", "two-pilot", "three-pilot",
+        ],
+    },
+
+    # ── Duty types ───────────────────────────────────────────────────────────
+    {
+        "code": "DUTY_TYPE_DOMESTIC",
+        "name": "Domestic Duty",
+        "category": "duty-type",
+        "dataType": "string",
+        "unit": None,
+        "description": "Duty performed on domestic (within-country) operations.",
+        "aliases": [
+            "domestic", "domestic duty", "domestic operations",
+            "domestic sector", "domestic flight",
+        ],
+    },
+    {
+        "code": "DUTY_TYPE_INTERNATIONAL",
+        "name": "International Duty",
+        "category": "duty-type",
+        "dataType": "string",
+        "unit": None,
+        "description": "Duty performed on international (cross-border) operations.",
+        "aliases": [
+            "international", "international duty", "international operations",
+            "international sector", "international flight",
+            "shorthaul international", "longhaul",
+        ],
+    },
+    {
+        "code": "DUTY_TYPE_GROUND",
+        "name": "Ground Duty",
+        "category": "duty-type",
+        "dataType": "string",
+        "unit": None,
+        "description": "Duty performed on the ground, not involving flight operations.",
+        "aliases": [
+            "ground", "ground duty", "ground operations",
+            "ground handling", "non-flying duty",
+        ],
+    },
+    {
+        "code": "DUTY_TYPE_POSITIONING",
+        "name": "Positioning Duty",
+        "category": "duty-type",
+        "dataType": "string",
+        "unit": None,
+        "description": "Travel as a passenger for operational repositioning purposes (paxing).",
+        "aliases": [
+            "positioning", "paxing", "deadhead", "repositioning",
+            "positioning duty", "operating and paxing",
+        ],
+    },
+
+    # ── Contract / schedule codes ────────────────────────────────────────────
+    {
+        "code": "CONTRACT_ETU_400",
+        "name": "ETU Schedule 400",
+        "category": "contract",
+        "dataType": "string",
+        "unit": None,
+        "description": "ETU collective agreement Schedule 400 governing conditions.",
+        "aliases": [
+            "etu schedule 400", "schedule 400", "s400", "etu cea s400",
+            "etu cea – s400", "etu-400",
+        ],
+    },
+    {
+        "code": "CONTRACT_ETU_500",
+        "name": "ETU Schedule 500",
+        "category": "contract",
+        "dataType": "string",
+        "unit": None,
+        "description": "ETU collective agreement Schedule 500 governing conditions.",
+        "aliases": [
+            "etu schedule 500", "schedule 500", "s500", "etu cea s500",
+            "etu cea – s500", "etu-500",
+        ],
+    },
+    {
+        "code": "CONTRACT_AMEA",
+        "name": "AMEA CEA",
+        "category": "contract",
+        "dataType": "string",
+        "unit": None,
+        "description": "AMEA collective employment agreement governing conditions.",
+        "aliases": [
+            "amea cea", "amea cea s400", "amea-400",
+        ],
+    },
+
+    # ── Rolling windows ──────────────────────────────────────────────────────
+    {
+        "code": "ROLLING_WINDOW_168H",
+        "name": "168-Hour Rolling Window",
+        "category": "rolling-window",
+        "dataType": "duration",
+        "unit": "hours",
+        "description": "Any rolling 168-hour (7-day) period used to measure cumulative duty.",
+        "aliases": [
+            "168 consecutive hours", "168-hour period", "168 hours",
+            "any 168", "7 day rolling", "7-day period",
+        ],
+    },
+    {
+        "code": "ROLLING_WINDOW_144H",
+        "name": "144-Hour Rolling Window",
+        "category": "rolling-window",
+        "dataType": "duration",
+        "unit": "hours",
+        "description": "Any rolling 144-hour (6-day) period used to measure days off.",
+        "aliases": [
+            "144 consecutive hours", "144-hour period", "144 hours",
+            "any 144", "6 consecutive days",
+        ],
+    },
+    {
+        "code": "ROLLING_WINDOW_28D",
+        "name": "28-Day Rolling Window",
+        "category": "rolling-window",
+        "dataType": "duration",
+        "unit": "days",
+        "description": "Any rolling 28-day period used to measure cumulative flight time or days off.",
+        "aliases": [
+            "28 consecutive days", "28-day period", "28 days",
+            "any 28 days", "28 day roster",
+        ],
+    },
 ]
 
 
